@@ -641,3 +641,25 @@ pub struct BillingNotificationStatus {
     pub current: String,
     pub previous: Option<String>,
 }
+
+// ========== Webhook Incoming Payload ==========
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixWebhookEvent {
+    #[serde(rename = "txid")]
+    pub tx_id: Option<String>,
+    pub pix: Option<Vec<PixWebhookPix>>,
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixWebhookPix {
+    #[serde(rename = "endToEndId")]
+    pub end_to_end_id: String,
+    #[serde(rename = "txid")]
+    pub tx_id: Option<String>,
+    #[serde(rename = "valor")]
+    pub value: String,
+}
+
