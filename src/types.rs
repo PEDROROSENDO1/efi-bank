@@ -84,6 +84,8 @@ pub struct CobPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CobCalendario {
+    /// Tempo de vida da cobrança imediata, em segundos. Usado em PUT /v2/cob/{txid}.
+    pub expiracao: Option<i32>,
     pub data_de_vencimento: Option<String>,
     pub validade_apos_vencimento: Option<i32>,
 }
@@ -136,6 +138,7 @@ pub struct CobResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CobCalendarioResponse {
     pub criacao_date_time: Option<String>,
+    pub expiracao: Option<i32>,
     pub data_de_vencimento: Option<String>,
     pub validade_apos_vencimento: Option<i32>,
 }
@@ -446,7 +449,7 @@ pub struct BillingChargeDetailPayment {
     pub method: String,
     pub created_at: String,
     pub message: Option<String>,
-    pub banking_billet: BillingChargeDetailBankingBillet,
+    pub banking_billet: Option<BillingChargeDetailBankingBillet>,
     pub credit_card: Option<serde_json::Value>,
 }
 
@@ -464,13 +467,13 @@ pub struct BillingChargeDetailBankingBillet {
 #[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingChargeData {
-    pub barcode: String,
+    pub barcode: Option<String>,
     #[serde(rename = "pix")]
     pub pix: Option<BillingPix>,
-    pub link: String,
-    pub billet_link: String,
-    pub pdf: BillingPdf,
-    pub expire_at: String,
+    pub link: Option<String>,
+    pub billet_link: Option<String>,
+    pub pdf: Option<BillingPdf>,
+    pub expire_at: Option<String>,
     pub charge_id: i64,
     pub status: String,
     pub total: i64,

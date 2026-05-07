@@ -14,7 +14,8 @@ pub struct Client {
     pub(crate) secret: String,
     pub(crate) environment: Environment,
     pub(crate) http: HttpClient,
-    pub(crate) token: Mutex<Option<AccessToken>>,
+    pub(crate) pix_token: Mutex<Option<AccessToken>>,
+    pub(crate) billing_token: Mutex<Option<AccessToken>>,
 }
 
 enum MtlsSource {
@@ -150,7 +151,8 @@ impl Client {
             secret: client_secret,
             environment,
             http: http_client,
-            token: Mutex::new(None),
+            pix_token: Mutex::new(None),
+            billing_token: Mutex::new(None),
         }
     }
 
