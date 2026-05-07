@@ -250,6 +250,23 @@ pub struct PixTransactionDetailResponse {
     pub motivo_cancelamento: Option<String>,
 }
 
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixRefundPayload {
+    pub valor: String,
+    pub natureza: Option<String>,
+    pub descricao: Option<String>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixRefundResponse {
+    pub id: String,
+    pub r2e_id: String,
+    pub valor: String,
+    pub status: String,
+}
+
 // ========== Billing API - Split de Pagamento ==========
 
 #[skip_serializing_none]
