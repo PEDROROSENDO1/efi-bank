@@ -269,7 +269,7 @@ impl Client {
         Ok(request.send().await?)
     }
 
-    async fn parse_response<Res>(response: reqwest::Response) -> Result<Res, Error>
+    pub(crate) async fn parse_response<Res>(response: reqwest::Response) -> Result<Res, Error>
     where
         Res: DeserializeOwned,
     {
