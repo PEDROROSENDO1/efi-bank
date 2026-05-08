@@ -128,6 +128,7 @@ pub struct CobResponse {
     pub chave: Option<String>,
     pub solicitacao_pagador: Option<String>,
     pub info_adicionais: Option<Vec<CobInfoAdicional>>,
+    #[serde(rename = "pixCopiaECola")]
     pub br: Option<String>,
     pub status: Option<String>,
     pub criacao_date_time: Option<String>,
@@ -175,6 +176,7 @@ pub struct CobvResponse {
     pub chave: Option<String>,
     pub solicitacao_pagador: Option<String>,
     pub info_adicionais: Option<Vec<CobInfoAdicional>>,
+    #[serde(rename = "pixCopiaECola")]
     pub br: Option<String>,
     pub status: Option<String>,
     pub criacao_date_time: Option<String>,
