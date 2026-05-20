@@ -195,9 +195,10 @@ pub struct CobvCalendarioResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookPayload {
-    pub url: String,
-    pub chave: String,
+    #[serde(rename = "webhookUrl")]
+    pub webhook_url: String,
 }
+
 
 #[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
