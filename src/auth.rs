@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -77,7 +77,7 @@ impl Client {
 
         token_store
             .lock()
-            .map_err(|_| Error::AuthUnavailable)?
+            .await
             .replace(AccessToken {
                 value: oauth.access_token,
                 expires_at,
@@ -92,7 +92,7 @@ impl Client {
         token_store: &Mutex<Option<AccessToken>>,
     ) -> Result<String, Error> {
         let needs_authentication = {
-            let token = token_store.lock().map_err(|_| Error::AuthUnavailable)?;
+            let token = token_store.lock().await;
             token.as_ref().is_none_or(AccessToken::is_expired)
         };
 
@@ -100,7 +100,7 @@ impl Client {
             self.authenticate_with_url(token_url, token_store).await?;
         }
 
-        let token = token_store.lock().map_err(|_| Error::AuthUnavailable)?;
+        let token = token_store.lock().await;
         token
             .as_ref()
             .map(|cached| cached.value.clone())

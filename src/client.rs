@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use std::{fs, path::PathBuf};
 
 use reqwest::{Client as HttpClient, Identity, Method, StatusCode};
@@ -140,7 +140,7 @@ impl ClientBuilder {
 }
 
 impl Client {
-    const fn from_parts(
+    fn from_parts(
         client_id: String,
         client_secret: String,
         environment: Environment,
