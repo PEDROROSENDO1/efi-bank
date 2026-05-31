@@ -1,5 +1,5 @@
 use tokio::sync::Mutex;
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 
 use reqwest::{Client as HttpClient, Identity, Method, StatusCode};
 use serde::Serialize;
@@ -118,16 +118,16 @@ impl ClientBuilder {
             match mtls_source {
                 MtlsSource::Pkcs12Der { der, password } => {
                     let identity = Identity::from_pkcs12_der(&der, &password)?;
-                    HttpClient::builder().identity(identity).build()?
+                    HttpClient::builder().identity(identity).timeout(Duration::from_secs(30)).build()?
                 }
                 MtlsSource::Pkcs12File { path, password } => {
                     let der = fs::read(path)?;
                     let identity = Identity::from_pkcs12_der(&der, &password)?;
-                    HttpClient::builder().identity(identity).build()?
+                    HttpClient::builder().identity(identity).timeout(Duration::from_secs(30)).build()?
                 }
             }
         } else {
-            HttpClient::new()
+            HttpClient::builder().timeout(Duration::from_secs(30)).build()?
         };
 
         Ok(Client::from_parts(
