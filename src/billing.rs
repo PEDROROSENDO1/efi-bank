@@ -3,10 +3,10 @@ use reqwest::Method;
 use crate::client::Client;
 use crate::error::Error;
 use crate::types::{
-    BillingActionResponse, BillingChargeCreateRequest, BillingChargeDetailResponse,
-    BillingChargeListQuery, BillingChargeListResponse, BillingChargeOneStepRequest,
-    BillingChargePayRequest, BillingChargeReadResponse, BillingChargeResponse,
-    BillingNotificationResponse,
+    BillingActionResponse, BillingBilletUpdateRequest, BillingChargeCreateRequest,
+    BillingChargeDetailResponse, BillingChargeListQuery, BillingChargeListResponse,
+    BillingChargeOneStepRequest, BillingChargePayRequest, BillingChargeReadResponse,
+    BillingChargeResponse, BillingNotificationResponse,
 };
 
 impl Client {
@@ -33,6 +33,17 @@ impl Client {
     ) -> Result<BillingChargeResponse, Error> {
         let path = format!("/v1/charge/{charge_id}/pay");
         self.send_authenticated_billing(Method::POST, &path, Some(payload))
+            .await
+    }
+
+    /// Update an unpaid billet's due date to a date strictly after today.
+    pub async fn billing_charge_update_billet(
+        &self,
+        charge_id: i64,
+        payload: &BillingBilletUpdateRequest,
+    ) -> Result<BillingActionResponse, Error> {
+        let path = format!("/v1/charge/{charge_id}/billet");
+        self.send_authenticated_billing(Method::PUT, &path, Some(payload))
             .await
     }
 

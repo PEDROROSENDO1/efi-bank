@@ -19,7 +19,7 @@ pub use environment::{Endpoints, Environment, PRODUCTION_ENDPOINTS, SANDBOX_ENDP
 pub use error::Error;
 pub use types::{
     BillingActionResponse, BillingAddress, BillingBankingBillet, BillingBilletConfigurations,
-    BillingChargeCreateRequest, BillingChargeData, BillingChargeDateOf,
+    BillingBilletUpdateRequest, BillingChargeCreateRequest, BillingChargeData, BillingChargeDateOf,
     BillingChargeDetailBankingBillet, BillingChargeDetailData, BillingChargeDetailPayment,
     BillingChargeDetailResponse, BillingChargeHistoryEntry, BillingChargeListBankingBillet,
     BillingChargeListCarnet, BillingChargeListItem, BillingChargeListParams,

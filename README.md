@@ -29,6 +29,15 @@ compatible and omit the date selector. The additive method also supports `Paymen
 and `Expired`, matching the
 [official list contract](https://dev.efipay.com.br/markdown/charges/billet/billet_list.md).
 
+## Update a boleto due date
+
+Use `billing_charge_update_billet(charge_id, &BillingBilletUpdateRequest { expire_at })`
+to update an unpaid banking billet. `expire_at` must be a `YYYY-MM-DD` date strictly
+after today. The call sends `PUT /v1/charge/{id}/billet` and returns
+`BillingActionResponse` with `code: 200` on success; retrieve the charge separately
+when refreshed boleto details are needed. See the
+[official boleto contract](https://dev.efipay.com.br/docs/api-cobrancas/boleto/#alterar-data-de-vencimento-de-uma-transação-existente).
+
 ## Features
 
 - **mTLS support** - PKCS#12 certificate authentication

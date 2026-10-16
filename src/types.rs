@@ -398,6 +398,13 @@ pub struct BillingChargePayRequest {
     pub payment: BillingPayment,
 }
 
+/// Update the due date of an unpaid banking billet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingBilletUpdateRequest {
+    /// New due date in YYYY-MM-DD format, strictly after the current date.
+    pub expire_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingChargeResponse {
     pub code: i32,
