@@ -9,6 +9,15 @@ use crate::auth::AccessToken;
 use crate::environment::{Endpoints, Environment};
 use crate::error::Error;
 
+// Bound each native HTTP attempt. OAuth refresh is accounted for separately.
+pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
+    HttpClient::builder()
+        .retry(reqwest::retry::never())
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20))
+        .connect_timeout(Duration::from_secs(5))
+}
+
 pub struct Client {
     pub(crate) id: String,
     pub(crate) secret: String,
@@ -16,6 +25,7 @@ pub struct Client {
     pub(crate) http: HttpClient,
     pub(crate) pix_token: Mutex<Option<AccessToken>>,
     pub(crate) billing_token: Mutex<Option<AccessToken>>,
+    endpoints_override: Option<Endpoints>,
 }
 
 enum MtlsSource {
@@ -77,6 +87,10 @@ impl ClientBuilder {
         self
     }
 
+    /// Supply a caller-owned transport, overriding the SDK defaults.
+    ///
+    /// The caller must disable retries and redirects and set finite request/connect
+    /// timeouts to retain bounded native request accounting.
     #[must_use]
     pub fn http_client(mut self, http_client: HttpClient) -> Self {
         self.http = Some(http_client);
@@ -118,16 +132,16 @@ impl ClientBuilder {
             match mtls_source {
                 MtlsSource::Pkcs12Der { der, password } => {
                     let identity = Identity::from_pkcs12_der(&der, &password)?;
-                    HttpClient::builder().identity(identity).timeout(Duration::from_secs(30)).build()?
+                    http_client_builder().identity(identity).build()?
                 }
                 MtlsSource::Pkcs12File { path, password } => {
                     let der = fs::read(path)?;
                     let identity = Identity::from_pkcs12_der(&der, &password)?;
-                    HttpClient::builder().identity(identity).timeout(Duration::from_secs(30)).build()?
+                    http_client_builder().identity(identity).build()?
                 }
             }
         } else {
-            HttpClient::builder().timeout(Duration::from_secs(30)).build()?
+            http_client_builder().build()?
         };
 
         Ok(Client::from_parts(
@@ -153,12 +167,35 @@ impl Client {
             http: http_client,
             pix_token: Mutex::new(None),
             billing_token: Mutex::new(None),
+            endpoints_override: None,
         }
     }
 
     #[must_use]
     pub const fn endpoints(&self) -> Endpoints {
-        self.environment.endpoints()
+        match self.endpoints_override {
+            Some(endpoints) => endpoints,
+            None => self.environment.endpoints(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_billing_client(base_url: &str) -> Self {
+        let base_url = Box::leak(base_url.to_owned().into_boxed_str());
+        let authorize_url = Box::leak(format!("{base_url}/v1/authorize").into_boxed_str());
+        let mut client = Self::from_parts(
+            "fixture-client".into(),
+            "fixture-secret".into(),
+            Environment::Sandbox,
+            http_client_builder().build().unwrap(),
+        );
+        client.endpoints_override = Some(Endpoints {
+            pix_api_base_url: base_url,
+            pix_api_oauth_token_url: authorize_url,
+            billing_api_base_url: base_url,
+            billing_api_oauth_token_url: authorize_url,
+        });
+        client
     }
 
     pub(crate) async fn send_authenticated<Req, Res>(
@@ -175,10 +212,13 @@ impl Client {
         let first_response = self
             .send_with_token_typed::<Req>(&token, method.clone(), path, payload)
             .await?;
+        let unauthorized = first_response.status() == StatusCode::UNAUTHORIZED;
+        if unauthorized {
+            self.clear_rejected_pix_token(&token).await;
+        }
 
-        if first_response.status() == StatusCode::UNAUTHORIZED {
-            self.authenticate().await?;
-            let refreshed_token = self.get_valid_access_token().await?;
+        if method == Method::GET && unauthorized {
+            let refreshed_token = self.refresh_access_token().await?;
             let retry_response = self
                 .send_with_token_typed::<Req>(&refreshed_token, method, path, payload)
                 .await?;
@@ -208,10 +248,13 @@ impl Client {
                 payload,
             )
             .await?;
+        let unauthorized = first_response.status() == StatusCode::UNAUTHORIZED;
+        if unauthorized {
+            self.clear_rejected_billing_token(&token).await;
+        }
 
-        if first_response.status() == StatusCode::UNAUTHORIZED {
-            self.authenticate_billing().await?;
-            let refreshed_token = self.get_valid_billing_access_token().await?;
+        if method == Method::GET && unauthorized {
+            let refreshed_token = self.refresh_billing_access_token().await?;
             let retry_response = self
                 .send_with_token_typed_base::<Req>(
                     &refreshed_token,
@@ -225,6 +268,26 @@ impl Client {
         }
 
         Self::parse_response::<Res>(first_response).await
+    }
+
+    async fn clear_rejected_pix_token(&self, rejected_token: &str) {
+        let mut cached = self.pix_token.lock().await;
+        if cached
+            .as_ref()
+            .is_some_and(|current| current.value == rejected_token)
+        {
+            cached.take();
+        }
+    }
+
+    async fn clear_rejected_billing_token(&self, rejected_token: &str) {
+        let mut cached = self.billing_token.lock().await;
+        if cached
+            .as_ref()
+            .is_some_and(|current| current.value == rejected_token)
+        {
+            cached.take();
+        }
     }
 
     async fn send_with_token_typed<Req>(
@@ -275,8 +338,17 @@ impl Client {
     {
         if !response.status().is_success() {
             let status = response.status();
+            let retry_after = response
+                .headers()
+                .get("Retry-After")
+                .and_then(|value| value.to_str().ok())
+                .map(ToOwned::to_owned);
             let body = response.text().await.unwrap_or_else(|_| String::new());
-            return Err(Error::RequestFailed { status, body });
+            return Err(Error::RequestFailed {
+                status,
+                body,
+                retry_after,
+            });
         }
 
         let body = response.text().await?;

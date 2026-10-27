@@ -3,8 +3,10 @@ use reqwest::Method;
 use crate::client::Client;
 use crate::error::Error;
 use crate::types::{
-    BillingChargeCreateRequest, BillingChargeDetailResponse, BillingChargeOneStepRequest,
-    BillingChargePayRequest, BillingChargeResponse, BillingNotificationResponse,
+    BillingActionResponse, BillingBilletUpdateRequest, BillingChargeCreateRequest,
+    BillingChargeDetailResponse, BillingChargeListQuery, BillingChargeListResponse,
+    BillingChargeOneStepRequest, BillingChargePayRequest, BillingChargeReadResponse,
+    BillingChargeResponse, BillingNotificationResponse,
 };
 
 impl Client {
@@ -34,6 +36,17 @@ impl Client {
             .await
     }
 
+    /// Update an unpaid billet's due date to a date strictly after today.
+    pub async fn billing_charge_update_billet(
+        &self,
+        charge_id: i64,
+        payload: &BillingBilletUpdateRequest,
+    ) -> Result<BillingActionResponse, Error> {
+        let path = format!("/v1/charge/{charge_id}/billet");
+        self.send_authenticated_billing(Method::PUT, &path, Some(payload))
+            .await
+    }
+
     pub async fn billing_charge_get(
         &self,
         charge_id: i64,
@@ -41,6 +54,90 @@ impl Client {
         let path = format!("/v1/charge/{charge_id}");
         self.send_authenticated_billing::<serde_json::Value, BillingChargeDetailResponse>(
             Method::GET,
+            &path,
+            None,
+        )
+        .await
+    }
+
+    pub async fn billing_charge_read(
+        &self,
+        charge_id: i64,
+    ) -> Result<BillingChargeReadResponse, Error> {
+        let path = format!("/v1/charge/{charge_id}");
+        self.send_authenticated_billing::<serde_json::Value, BillingChargeReadResponse>(
+            Method::GET,
+            &path,
+            None,
+        )
+        .await
+    }
+
+    pub async fn billing_charges_list(
+        &self,
+        query: &BillingChargeListQuery,
+    ) -> Result<BillingChargeListResponse, Error> {
+        self.billing_charges_list_with_date_of(query, None).await
+    }
+
+    /// List charges with an explicit choice of which date the bounds filter.
+    ///
+    /// Use `Some(BillingChargeDateOf::Creation)` when discovering a charge after
+    /// uncertain creation. `None` preserves the provider's default behavior.
+    pub async fn billing_charges_list_with_date_of(
+        &self,
+        query: &BillingChargeListQuery,
+        date_of: Option<crate::types::BillingChargeDateOf>,
+    ) -> Result<BillingChargeListResponse, Error> {
+        let mut url = reqwest::Url::parse("https://unused.invalid/v1/charges")
+            .expect("the static lifecycle charges URL is valid");
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs
+                .append_pair("charge_type", &query.charge_type)
+                .append_pair("begin_date", &query.begin_date)
+                .append_pair("end_date", &query.end_date);
+            if let Some(date_of) = date_of {
+                let date_of = match date_of {
+                    crate::types::BillingChargeDateOf::Creation => "creation",
+                    crate::types::BillingChargeDateOf::Payment => "payment",
+                    crate::types::BillingChargeDateOf::Expired => "expired",
+                };
+                pairs.append_pair("date_of", date_of);
+            }
+            if let Some(custom_id) = &query.custom_id {
+                pairs.append_pair("custom_id", custom_id);
+            }
+            if let Some(limit) = query.limit {
+                pairs.append_pair("limit", &limit.to_string());
+            }
+            if let Some(page) = query.page {
+                pairs.append_pair("page", &page.to_string());
+            }
+            if let Some(offset) = query.offset {
+                pairs.append_pair("offset", &offset.to_string());
+            }
+        }
+        let path = format!(
+            "{}?{}",
+            url.path(),
+            url.query().expect("lifecycle charges query is not empty")
+        );
+        self.send_authenticated_billing::<serde_json::Value, BillingChargeListResponse>(
+            Method::GET,
+            &path,
+            None,
+        )
+        .await
+    }
+
+    pub async fn billing_charge_cancel_response(
+        &self,
+        charge_id: i64,
+    ) -> Result<BillingActionResponse, Error> {
+        let path = format!("/v1/charge/{charge_id}/cancel");
+        self.send_authenticated_billing::<serde_json::Value, BillingActionResponse>(
+            Method::PUT,
             &path,
             None,
         )

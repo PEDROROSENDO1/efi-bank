@@ -2,6 +2,42 @@
 
 A Rust SDK for integrating with the payment services provided by [Efí Bank](https://dev.efipay.com.br/en/docs/api-pix/credenciais/). This library provides strongly-typed bindings for the Efí Pix API with automatic OAuth token management and mTLS support.
 
+## HTTP transport and request accounting
+
+SDK-created clients disable automatic HTTP retries and redirects. Each HTTP
+attempt has a 20-second total timeout and a 5-second connection timeout, including
+TLS negotiation. A timeout or dropped response does not prove a mutation failed;
+reconcile uncertain mutations before deciding whether to submit another request.
+
+`ClientBuilder::http_client` accepts a caller-owned Reqwest client. Configure that
+client with `.retry(reqwest::retry::never())`,
+`.redirect(reqwest::redirect::Policy::none())`, and finite `.timeout(...)` and
+`.connect_timeout(...)` values to preserve these accounting bounds.
+
+OAuth handling remains explicit: one initial authentication when needed, one API
+attempt, and at most one token refresh and repeated GET after HTTP 401 (up to
+four native requests from a cold client). Mutations are never replayed after a
+401. Transport errors and rate limits do not trigger that refresh. PDF downloads
+also disable retries and redirects and retain their trusted-host, content-type,
+signature, and size checks.
+
+For charge discovery, use `charge_type: "billet".into()` in the existing
+`BillingChargeListQuery` and call
+`billing_charges_list_with_date_of(&query, Some(BillingChargeDateOf::Creation))`.
+The original `billing_charges_list(&query)` method and query struct remain source
+compatible and omit the date selector. The additive method also supports `Payment`
+and `Expired`, matching the
+[official list contract](https://dev.efipay.com.br/markdown/charges/billet/billet_list.md).
+
+## Update a boleto due date
+
+Use `billing_charge_update_billet(charge_id, &BillingBilletUpdateRequest { expire_at })`
+to update an unpaid banking billet. `expire_at` must be a `YYYY-MM-DD` date strictly
+after today. The call sends `PUT /v1/charge/{id}/billet` and returns
+`BillingActionResponse` with `code: 200` on success; retrieve the charge separately
+when refreshed boleto details are needed. See the
+[official boleto contract](https://dev.efipay.com.br/docs/api-cobrancas/boleto/#alterar-data-de-vencimento-de-uma-transação-existente).
+
 ## Features
 
 - **mTLS support** - PKCS#12 certificate authentication
@@ -239,7 +275,7 @@ use efi_bank::Error;
 
 match client.cob_create(&payload).await {
     Ok(response) => println!("Success: {}", response.txid),
-    Err(Error::RequestFailed { status, body }) => {
+    Err(Error::RequestFailed { status, body, .. }) => {
         eprintln!("HTTP Error {}: {}", status, body);
     }
     Err(Error::Json(e)) => eprintln!("JSON parsing error: {}", e),

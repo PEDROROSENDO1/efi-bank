@@ -9,10 +9,39 @@ pub enum Error {
     Json(serde_json::Error),
     AuthUnavailable,
     EmptyResponse,
+    InvalidArtifact(&'static str),
     RequestFailed {
         status: reqwest::StatusCode,
         body: String,
+        retry_after: Option<String>,
     },
+}
+
+impl Error {
+    #[must_use]
+    pub const fn status_code(&self) -> Option<reqwest::StatusCode> {
+        match self {
+            Self::RequestFailed { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn response_body(&self) -> Option<&str> {
+        match self {
+            Self::RequestFailed { body, .. } => Some(body),
+            _ => None,
+        }
+    }
+
+    /// Returns the native `Retry-After` value without interpreting a duration or HTTP date.
+    #[must_use]
+    pub fn retry_after(&self) -> Option<&str> {
+        match self {
+            Self::RequestFailed { retry_after, .. } => retry_after.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 impl Display for Error {
@@ -26,8 +55,9 @@ impl Display for Error {
             Self::Http(error) => write!(f, "http error: {error}"),
             Self::Json(error) => write!(f, "json error: {error}"),
             Self::AuthUnavailable => write!(f, "authentication token is unavailable"),
+            Self::InvalidArtifact(message) => write!(f, "invalid provider artifact: {message}"),
             Self::EmptyResponse => write!(f, "received empty response from server"),
-            Self::RequestFailed { status, body } => {
+            Self::RequestFailed { status, body, .. } => {
                 write!(f, "request failed with status {status}: {body}")
             }
         }

@@ -1,3 +1,4 @@
+use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::skip_serializing_none;
@@ -420,6 +421,13 @@ pub struct BillingChargePayRequest {
     pub payment: BillingPayment,
 }
 
+/// Update the due date of an unpaid banking billet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingBilletUpdateRequest {
+    /// New due date in YYYY-MM-DD format, strictly after the current date.
+    pub expire_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingChargeResponse {
     pub code: i32,
@@ -512,6 +520,273 @@ pub struct BillingPdf {
     pub charge: String,
 }
 
+// ========== Billing API - Lifecycle Reads ===========
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BillingActionResponse {
+    pub code: i32,
+}
+
+/// Which date the charge-list search bounds apply to.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BillingChargeDateOf {
+    Creation,
+    Payment,
+    Expired,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BillingChargeListQuery {
+    /// Native list filter: `billet`, `carnet`, `subscription`, or `card`.
+    pub charge_type: String,
+    pub begin_date: String,
+    pub end_date: String,
+    /// Correlates Efí charges with caller records; it is not an idempotency key.
+    pub custom_id: Option<String>,
+    pub limit: Option<u32>,
+    pub page: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeListResponse {
+    pub code: i32,
+    pub data: Vec<BillingChargeListItem>,
+    pub params: BillingChargeListParams,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeListParams {
+    pub begin_date: String,
+    pub end_date: String,
+    pub pagination: BillingPagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BillingPagination {
+    pub limit: u32,
+    pub offset: u32,
+    pub page: u32,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeListItem {
+    /// The child charge identifier returned by the beta list endpoint.
+    pub id: i64,
+    /// Present only when Efí includes the parent carnet identity.
+    pub carnet_id: Option<i64>,
+    pub total: i64,
+    pub status: String,
+    pub custom_id: Option<String>,
+    pub created_at: Option<String>,
+    pub customer: Option<BillingLifecycleCustomer>,
+    pub payment: Option<BillingChargeListPayment>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingLifecycleCustomer {
+    pub name: Option<String>,
+    pub cpf: Option<String>,
+    pub cnpj: Option<String>,
+    pub email: Option<String>,
+    pub phone_number: Option<String>,
+    pub address: Option<BillingAddress>,
+    pub juridical_person: Option<BillingJuridicalPerson>,
+}
+
+impl BillingLifecycleCustomer {
+    #[must_use]
+    pub fn tax_id(&self) -> Option<&str> {
+        self.cpf.as_deref().or(self.cnpj.as_deref()).or_else(|| {
+            self.juridical_person
+                .as_ref()
+                .map(|person| person.cnpj.as_str())
+        })
+    }
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeListPayment {
+    pub payment_method: String,
+    pub received_by_bank_at: Option<String>,
+    pub paid_at: Option<String>,
+    pub paid_value: Option<i64>,
+    pub banking_billet: Option<BillingChargeListBankingBillet>,
+    pub carnet: Option<BillingChargeListCarnet>,
+    pub pix: Option<BillingPix>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeListBankingBillet {
+    pub barcode: Option<String>,
+    pub link: Option<String>,
+    pub expire_at: Option<String>,
+    pub pdf: Option<BillingPdf>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeListCarnet {
+    /// The beta endpoint may omit this parent identity from child rows.
+    pub carnet_id: Option<i64>,
+    pub parcel: CarnetParcelNumber,
+    pub barcode: Option<String>,
+    pub expire_at: Option<String>,
+    pub link: Option<String>,
+    pub pdf: Option<BillingPdf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeReadResponse {
+    pub code: i32,
+    pub data: BillingChargeReadData,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeReadData {
+    pub charge_id: i64,
+    pub total: i64,
+    pub status: String,
+    pub custom_id: Option<String>,
+    pub created_at: Option<String>,
+    pub notification_url: Option<String>,
+    pub items: Option<Vec<BillingItemResponse>>,
+    pub customer: Option<BillingLifecycleCustomer>,
+    pub payment: Option<BillingChargeReadPayment>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeReadPayment {
+    pub method: Option<String>,
+    pub created_at: Option<String>,
+    pub banking_billet: Option<BillingChargeReadBankingBillet>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillingChargeReadBankingBillet {
+    pub barcode: Option<String>,
+    pub link: Option<String>,
+    pub billet_link: Option<String>,
+    pub expire_at: Option<String>,
+    pub pdf: Option<BillingPdf>,
+    pub pix: Option<BillingPix>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarnetDetailResponse {
+    pub code: i32,
+    pub data: CarnetDetailData,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarnetDetailData {
+    pub carnet_id: i64,
+    pub status: String,
+    pub repeats: Option<u32>,
+    pub value: Option<i64>,
+    pub custom_id: Option<String>,
+    pub notification_url: Option<String>,
+    pub split_items: Option<bool>,
+    pub created_at: Option<String>,
+    pub cover: Option<String>,
+    pub link: Option<String>,
+    pub carnet_link: Option<String>,
+    pub pdf: Option<CarnetPdf>,
+    pub charges: Vec<CarnetDetailCharge>,
+}
+
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarnetDetailCharge {
+    pub charge_id: i64,
+    pub parcel: CarnetParcelNumber,
+    pub status: String,
+    pub value: Option<i64>,
+    pub expire_at: Option<String>,
+    pub url: Option<String>,
+    pub parcel_link: Option<String>,
+    pub pdf: Option<CarnetChargePdf>,
+    pub barcode: Option<String>,
+    pub pix: Option<BillingPix>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CarnetParcelNumber(u32);
+
+impl CarnetParcelNumber {
+    #[must_use]
+    pub const fn new(value: u32) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl Serialize for CarnetParcelNumber {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u32(self.0)
+    }
+}
+
+struct CarnetParcelNumberVisitor;
+
+impl<'de> Visitor<'de> for CarnetParcelNumberVisitor {
+    type Value = CarnetParcelNumber;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a positive carnet parcel number or numeric string")
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let value = u32::try_from(value).map_err(E::custom)?;
+        CarnetParcelNumber::new(value).ok_or_else(|| E::custom("parcel number must be positive"))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let value = u32::try_from(value).map_err(E::custom)?;
+        CarnetParcelNumber::new(value).ok_or_else(|| E::custom("parcel number must be positive"))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let value = value.parse::<u32>().map_err(E::custom)?;
+        CarnetParcelNumber::new(value).ok_or_else(|| E::custom("parcel number must be positive"))
+    }
+}
+
+impl<'de> Deserialize<'de> for CarnetParcelNumber {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(CarnetParcelNumberVisitor)
+    }
+}
+
 // ========== Billing API - Carnet ===========
 
 #[skip_serializing_none]
@@ -523,6 +798,7 @@ pub struct CarnetCustomer {
     pub email: Option<String>,
     pub phone_number: Option<String>,
     pub birth: Option<String>,
+    pub address: Option<BillingAddress>,
     pub juridical_person: Option<BillingJuridicalPerson>,
 }
 
@@ -634,9 +910,12 @@ pub struct BillingNotificationData {
     pub value: Option<i64>,
 }
 
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingNotificationIdentifiers {
-    pub charge_id: i64,
+    pub charge_id: Option<i64>,
+    pub carnet_id: Option<i64>,
+    pub subscription_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -666,3 +945,41 @@ pub struct PixWebhookPix {
     pub value: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::BillingNotificationResponse;
+
+    #[test]
+    fn deserializes_mixed_carnet_notification_history() {
+        let response: BillingNotificationResponse = serde_json::from_value(serde_json::json!({
+            "code": 200,
+            "data": [
+                {
+                    "created_at": "2022-03-22 09:38:36",
+                    "custom_id": null,
+                    "id": 1,
+                    "identifiers": { "carnet_id": 2512240 },
+                    "status": { "current": "up_to_date", "previous": null },
+                    "type": "carnet"
+                },
+                {
+                    "created_at": "2022-04-03 07:34:22",
+                    "custom_id": null,
+                    "id": 2,
+                    "identifiers": {
+                        "carnet_id": 2512240,
+                        "charge_id": 27757742
+                    },
+                    "status": { "current": "paid", "previous": "waiting" },
+                    "type": "carnet_charge",
+                    "value": 6250
+                }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(response.data[0].identifiers.charge_id, None);
+        assert_eq!(response.data[0].identifiers.carnet_id, Some(2512240));
+        assert_eq!(response.data[1].identifiers.charge_id, Some(27757742));
+    }
+}
